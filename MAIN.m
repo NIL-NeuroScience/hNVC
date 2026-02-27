@@ -6,11 +6,17 @@
 % Main analysis script for NVC modeling in humans paper. Uses fMRI BOLD,
 % EEG, and pupil data acquired by the Lewis lab at MIT.
 
+%% initialize repo
+
+utils.f_startup
+repo_dir = utils.f_getPackagePath;
+save_dir = fullfile(repo_dir,'analysis');
+
 %% load data
 
-data_dir = '/Users/bcraus/Library/Mobile Documents/com~apple~CloudDocs/Documents/BostonU/Research/DevorLab/AnalysisCode/NVC_human/Zinong_data.mat';
-save_dir = '/Users/bcraus/Library/Mobile Documents/com~apple~CloudDocs/Documents/BostonU/Research/DevorLab/AnalysisCode/NVC_human/Images';
+data = f_loadDataset;
 
+%%
 subjects = whos('-file',data_dir);
 subjects = {subjects.name};
 sub_idx = 1;
