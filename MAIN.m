@@ -1,5 +1,5 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%% MAIN_human_NVC.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% MAIN.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 
 % author: Brad Rauscher (2025/Dec/16)
 % 
@@ -11,30 +11,27 @@
 utils.f_startup
 repo_dir = utils.f_getPackagePath;
 save_dir = fullfile(repo_dir,'analysis');
+[~, ~, ~] = mkdir(save_dir);
 
 %% load data
 
 data = f_loadDataset;
 
-%%
-subjects = whos('-file',data_dir);
-subjects = {subjects.name};
+%% organize data
+subjects = fieldnames(data);
 sub_idx = 1;
 
-data = f_load_Zinong_data(subjects{sub_idx});
-
-save_dir = fullfile(save_dir,subjects{sub_idx});
-[~, ~, ~] = mkdir(save_dir);
+sub_data = data.(subjects{sub_idx});
 
 save_plots = 1;
 
-data.pupil(data.pupil==0) = NaN;
-data.pupil = fillmissing(data.pupil,'linear');
+sub_data.pupil(sub_data.pupil==0) = NaN;
+sub_data.pupil = fillmissing(sub_data.pupil,'linear');
 
 %% process EEG
 
 ephys = struct;
-[ephys.spg, ~, ephys.f] = f_morlet(data.EEG, data.settings.EEG_fs, [1.5, 100], 200);
+[ephys.spg, ~, ephys.f] = f_morlet(sub_data.EEG, sub_data.EEG_fs, [1.5, 100], 200);
 
 %%
 bands = struct;
@@ -49,34 +46,32 @@ bands.labels = {'delta', 'theta', 'alpha', 'beta', 'gamma'};
 for i = 1:numel(bands.labels)
     label = bands.labels{i};
     ephys.(label) = log10(squeeze(mean(ephys.spg(:,bands.(label)(1):bands.(label)(2),:),2)));
-    % lb = min(ephys.(label), [], 'all');
-    ephys.(label) = resample(ephys.(label),data.settings.MR_fs,data.settings.EEG_fs);
-    % ephys.(label)(ephys.(label) < lb) = lb;
+    ephys.(label) = resample(ephys.(label),sub_data.settings.MR_fs,sub_data.settings.EEG_fs);
 end
 
 %% plot signals
 
-t = (1:numel(data.pupil)) / data.settings.MR_fs;
-t_EEG = (1:size(data.EEG,1)) / data.settings.EEG_fs;
+t = (1:numel(sub_data.pupil)) / sub_data.MR_fs;
+t_EEG = (1:size(sub_data.EEG,1)) / sub_data.EEG_fs;
 
 f = figure;
 tiledlayout(3,1);
 
 ax = nexttile;
-plot(t,mean(data.BOLD,2));
+plot(t,mean(sub_data.BOLD,2));
 ylabel('BOLD');
 box off;
 title('Global Average');
 
 ax(2) = nexttile;
-plot(t,data.pupil);
+plot(t,sub_data.pupil);
 ylabel('Pupil');
 box off;
 
 ax(3) = nexttile;
 EEG_channel = 1;
-f_morlet(data.EEG(:,EEG_channel),500,[1.5,45],300,plot=1);
-title(data.EEG_labels{EEG_channel});
+f_morlet(sub_data.EEG(:,EEG_channel),500,[1.5,45],300,plot=1);
+title(sub_data.EEG_labels{EEG_channel});
 
 for i = 1:numel(ax); ax(i).XLim = [0, t(end)]; end
 set(ax(1:2),XTickLabel=[]);
@@ -104,7 +99,7 @@ c = colorbar;
 c.Label.String = 'r';
 
 ax(6) = nexttile;hold on;
-idx = ~tril(ones(numel(data.EEG_labels),numel(data.EEG_labels)));
+idx = ~tril(ones(numel(sub_data.EEG_labels),numel(sub_data.EEG_labels)));
 for i = 1:5
     tmp = corrcoef(ephys.(bands.labels{i}));
     bar(i,mean(tmp(idx),'all'),FaceColor=cmp(i,:));
@@ -117,9 +112,9 @@ f_savePNG(fullfile(save_dir,'global_corr.png'), flag=save_plots, dim=[5,4]);
 %% analyze local ephys patterns
 
 corr = struct;
-corr.EEG = NaN(5,5,numel(data.EEG_labels));
+corr.EEG = NaN(5,5,numel(sub_data.EEG_labels));
 
-for i = 1:numel(data.EEG_labels)
+for i = 1:numel(sub_data.EEG_labels)
     tmp = [];
     for c = 1:5
         tmp = [tmp, ephys.(bands.labels{c})(:,i)];
@@ -145,9 +140,9 @@ f_savePNG(fullfile(save_dir,'EEG_local_corr.png'), flag=save_plots, dim=[3,4]);
 
 % Calculate correlation between EEG bands and pupil
 
-corr.EEG_pupil = NaN(numel(data.EEG_labels),5);
+corr.EEG_pupil = NaN(numel(sub_data.EEG_labels),5);
 for i = 1:5
-    corr.EEG_pupil(:,i) = f_corr(data.pupil,ephys.(bands.labels{i}),1);
+    corr.EEG_pupil(:,i) = f_corr(sub_data.pupil,ephys.(bands.labels{i}),1);
 end
 
 figure;
@@ -165,7 +160,7 @@ ax.YLabel.Visible = 'on';
 f_savePNG(fullfile(save_dir,'EEG_vs_pupil.png'), flag=save_plots, dim=[5,3]);
 
 %% Calculate correlation between BOLD and pupil
-corr.BOLD_pupil = f_corr(data.BOLD,data.pupil,1);
+corr.BOLD_pupil = f_corr(sub_data.BOLD,sub_data.pupil,1);
 
 figure;
 bar(corr.BOLD_pupil);
@@ -176,12 +171,12 @@ box off;
 f_savePNG(fullfile(save_dir,'BOLD_vs_pupil.png'), flag=save_plots, dim=[3,4]);
 
 %% Calculate correlation between BOLD and EEG bands
-corr.BOLD_EEG = NaN(numel(data.MR_labels), numel(data.EEG_labels), 5);
+corr.BOLD_EEG = NaN(numel(sub_data.MR_labels), numel(sub_data.EEG_labels), 5);
 
-tmpBOLD = data.BOLD .* ones(1,1,numel(data.EEG_labels));
+tmpBOLD = sub_data.BOLD .* ones(1,1,numel(sub_data.EEG_labels));
 for i = 1:5
     label = bands.labels{i};
-    tmpEEG = ephys.(label) .* ones(1,1,numel(data.MR_labels));
+    tmpEEG = ephys.(label) .* ones(1,1,numel(sub_data.MR_labels));
     tmpEEG = permute(tmpEEG,[1,3,2]);
     corr.BOLD_EEG(:,:,i) = f_corr(tmpBOLD,tmpEEG,1);
 end
@@ -207,20 +202,20 @@ f_savePNG(fullfile(save_dir,'BOLD_vs_EEG.png'), flag=save_plots, dim=[5,3]);
 
 %% estimate multi-IRF
 
-fs = data.settings.MR_fs;
+fs = sub_data.settings.MR_fs;
 win = fs*[-10, 10];
 
 meas_idx = [1,2,3,4,5,6];
 
-perf = zeros(numel(data.MR_labels), numel(data.EEG_labels));
-IRFs = zeros(sum(abs(win))+1, numel(meas_idx), numel(data.MR_labels), numel(data.EEG_labels));
-params = zeros(3, numel(meas_idx), numel(data.MR_labels), numel(data.EEG_labels));
+perf = zeros(numel(sub_data.MR_labels), numel(sub_data.EEG_labels));
+IRFs = zeros(sum(abs(win))+1, numel(meas_idx), numel(sub_data.MR_labels), numel(sub_data.EEG_labels));
+params = zeros(3, numel(meas_idx), numel(sub_data.MR_labels), numel(sub_data.EEG_labels));
 
-for MR_channel = 1:numel(data.MR_labels)
+for MR_channel = 1:numel(sub_data.MR_labels)
     disp(MR_channel);
-    for EEG_channel = 1:numel(data.EEG_labels)
+    for EEG_channel = 1:numel(sub_data.EEG_labels)
     
-        X = [data.pupil,...
+        X = [sub_data.pupil,...
             ephys.delta(:,EEG_channel),...
             ephys.theta(:,EEG_channel),...
             ephys.alpha(:,EEG_channel),...
@@ -230,7 +225,7 @@ for MR_channel = 1:numel(data.MR_labels)
         % X(:,2:end) = log10(X(:,2:end));
         X = X./std(X,0);
 
-        Y = data.BOLD(:,MR_channel);
+        Y = sub_data.BOLD(:,MR_channel);
         Y = f_bpf(Y, [0, 0.5], fs);
         Y = Y./std(Y,0);
 
@@ -281,10 +276,10 @@ f_savePNG(fullfile(save_dir,'multi_IRFs_r.png'), flag=save_plots, dim=[3,5]);
 
 %% FC
 
-win = data.settings.MR_fs * [10, 3];
+win = sub_data.settings.MR_fs * [10, 3];
 
-FC = f_funConGram(data.BOLD, win);
-ds_pupil = movmean(data.pupil, win(1), Endpoints='discard');
+FC = f_funConGram(sub_data.BOLD, win);
+ds_pupil = movmean(sub_data.pupil, win(1), Endpoints='discard');
 ds_pupil = ds_pupil(1:win(2):end);
 
 high_pupil = ds_pupil > prctile(ds_pupil, 60);
